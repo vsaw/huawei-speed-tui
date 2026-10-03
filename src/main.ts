@@ -27,7 +27,7 @@ Options:
   --user <name>         Router admin user (default: admin)
                         (or set HUAWEI_USER)
   --password <pw>       Router admin password, needed for the device list
-                        (or set HUAWEI_PASSWORD; defaults to the built-in password)
+                        (or set HUAWEI_PASSWORD)
   -h, --help            Show this help
 
 HUAWEI_* variables can also live in a .env file in the current directory;
@@ -42,7 +42,6 @@ const WINDOWS = [60, 300, 900, 3600];
 const STATUS_EVERY_MS = 10_000;
 const HOSTS_EVERY_MS = 5_000;
 const MOBILE_EVERY_MS = 2_000;
-const DEFAULT_PASSWORD = 'REDACTED';
 
 const { values: args } = parseArgs({
   options: {
@@ -61,7 +60,7 @@ if (args.help) {
   process.exit(0);
 }
 
-// Precedence: CLI option > environment variable > .env file > default.
+// Precedence: CLI option > environment variable > .env file > default (none for the password).
 function loadDotEnv(): Record<string, string | undefined> {
   try {
     return parseEnv(readFileSync('.env', 'utf8'));
@@ -78,7 +77,7 @@ const host = /^https?:\/\//.test(rawHost) ? rawHost : `http://${rawHost}`;
 const intervalMs = Math.max(250, Number(args.interval) * 1000 || 1000);
 const client = new HuaweiClient(host, {
   username: args.user ?? setting('HUAWEI_USER') ?? 'admin',
-  password: args.password ?? setting('HUAWEI_PASSWORD') ?? DEFAULT_PASSWORD,
+  password: args.password ?? setting('HUAWEI_PASSWORD'),
 });
 
 // ---- state ----------------------------------------------------------------

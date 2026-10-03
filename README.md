@@ -27,8 +27,8 @@ Keys: `q` quit · `p` pause · `w` cycle window (1m / 5m / 15m / 60m) · `s` tog
 
 At the bottom, a table lists the connected Wi-Fi devices: name, MAC address, IPv4 address,
 address source (DHCP/static) and how long each has been connected. The device list needs the router admin
-password: pass `--password`, set `HUAWEI_PASSWORD` (in the environment or `.env`), or rely on the built-in default in
-`src/main.ts`. A rejected password is never retried, so the router won't lock the account.
+password: pass `--password` or set `HUAWEI_PASSWORD` (in the environment or `.env`); without it
+the device list and LTE signal details are skipped. A rejected password is never retried, so the router won't lock the account.
 
 Below the speed charts, an LTE signal chart shows the router's link to the cell tower (RSRP,
 rated Excellent (≥ −80 dBm) · Good (≥ −90) · Fair (≥ −100) · Weak (≥ −110) · Poor), and a header
