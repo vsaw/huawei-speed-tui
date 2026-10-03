@@ -27,8 +27,8 @@ Options:
                         (or set HUAWEI_PASSWORD; defaults to the built-in password)
   -h, --help            Show this help
 
-The Wi-Fi signal panel (this Mac's link to the router) needs macOS and swiftc;
-its helper is compiled into .cache/ on first run.
+The Wi-Fi signal panel (this Mac's link to the router) needs a helper that
+\`npm run build\` compiles with swiftc on macOS; \`npm start\` builds it first.
 
 Keys: q quit · p pause · w cycle time window · s toggle shared scale`;
 
@@ -340,7 +340,7 @@ function wifiCurrent() {
 function wifiProblem(): string {
   if (wifi.state === 'unavailable') return paint(c.red, `⚠ ${wifi.error}`);
   const r = wifiCurrent();
-  if (wifi.state === 'starting' || !r) return paint(c.dim, 'starting Wi-Fi monitor (first run compiles a helper)…');
+  if (wifi.state === 'starting' || !r) return paint(c.dim, 'starting Wi-Fi monitor…');
   if (!r.powerOn) return paint(c.yellow, 'Wi-Fi is turned off');
   if (r.rssi === undefined) return paint(c.yellow, 'not connected to a Wi-Fi network');
   return '';

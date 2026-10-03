@@ -29,8 +29,9 @@ Next to it, a Wi-Fi signal chart shows how strong this Mac's Wi-Fi link to the r
 is, rated Excellent (≥ −50 dBm) · Good (≥ −60) · Fair (≥ −70) · Weak (≥ −80) · Poor, and a
 second header line summarises the link (signal, signal-to-noise ratio rated Excellent (≥ 40 dB) ·
 Good (≥ 25) · Fair (≥ 15) · Weak (≥ 10) · Poor, link rate, channel, band, Wi-Fi standard).
-It reads CoreWLAN through `helpers/wifi-signal.swift`, which is compiled into `.cache/` on first
-run, so it needs macOS and `swiftc` (Xcode Command Line Tools). It warns if the Mac reaches the
+It reads CoreWLAN through `helpers/wifi-signal.swift`, which `npm run build` compiles into
+`build/wifi-signal` (`npm start` runs the build first; it only recompiles when the source
+changed), so it needs macOS and `swiftc` (Xcode Command Line Tools). It warns if the Mac reaches the
 router through another interface than Wi-Fi.
 
 Data comes from `/api/monitoring/traffic-statistics` (rates in bytes/s, shown as bits/s), with

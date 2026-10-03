@@ -8,6 +8,8 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "build": "node scripts/build-wifi-helper.ts",
+    "prestart": "npm run --silent build",
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit"
   },

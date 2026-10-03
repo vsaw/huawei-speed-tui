@@ -1,18 +1,19 @@
 // This Mac's view of its Wi-Fi link to the router, read through CoreWLAN by a small
-// Swift helper (helpers/wifi-signal.swift). The helper is compiled on first use and
-// cached in .cache/; it needs macOS and swiftc (Xcode Command Line Tools).
+// Swift helper (helpers/wifi-signal.swift). `npm run build` compiles it into build/
+// (it runs automatically before `npm start`); it needs macOS and swiftc (Xcode Command
+// Line Tools).
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
-const SOURCE = fileURLToPath(new URL('../helpers/wifi-signal.swift', import.meta.url));
-const CACHE_DIR = fileURLToPath(new URL('../.cache/', import.meta.url));
-const BINARY = `${CACHE_DIR}wifi-signal`;
+export const HELPER_SOURCE = fileURLToPath(new URL('../helpers/wifi-signal.swift', import.meta.url));
+export const HELPER_BINARY = fileURLToPath(new URL('../build/wifi-signal', import.meta.url));
 const ROUTE_EVERY_MS = 30_000;
 
 export interface WifiReading {
@@ -57,12 +58,12 @@ export class WifiMonitor {
   async start(): Promise<void> {
     if (process.platform !== 'darwin') return this.fail('Wi-Fi signal is only available on macOS');
     try {
-      await this.compile();
+      await access(HELPER_BINARY, constants.X_OK);
     } catch {
-      return this.fail('could not compile the Wi-Fi helper (install Xcode Command Line Tools: xcode-select --install)');
+      return this.fail('Wi-Fi helper not built: run `npm run build` (needs Xcode Command Line Tools)');
     }
 
-    const child = spawn(BINARY, [String(this.intervalMs)], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn(HELPER_BINARY, [String(this.intervalMs)], { stdio: ['ignore', 'pipe', 'ignore'] });
     this.child = child;
     child.on('error', () => this.fail('could not start the Wi-Fi helper'));
     child.on('exit', () => {
@@ -86,13 +87,6 @@ export class WifiMonitor {
     this.stop();
     this.state = 'unavailable';
     this.error = message;
-  }
-
-  private async compile(): Promise<void> {
-    const [src, bin] = await Promise.all([stat(SOURCE), stat(BINARY).catch(() => undefined)]);
-    if (bin && bin.mtimeMs >= src.mtimeMs) return;
-    await mkdir(CACHE_DIR, { recursive: true });
-    await run('swiftc', ['-O', SOURCE, '-o', BINARY], { timeout: 180_000 });
   }
 
   private onReading(line: string): void {
