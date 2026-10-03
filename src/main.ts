@@ -1,4 +1,5 @@
-import { parseArgs } from 'node:util';
+import { readFileSync } from 'node:fs';
+import { parseArgs, parseEnv } from 'node:util';
 import { HuaweiClient, type MobileSignal, type Status, type Traffic, type WifiHost } from './api.ts';
 import { renderArea, resample, type Sample } from './chart.ts';
 import { formatBytes, formatDuration, formatRate, niceCeil } from './format.ts';
@@ -19,13 +20,18 @@ Usage: npm start -- [options]
 
 Options:
   --host <url>          Router address (default: http://192.168.8.1)
+                        (or set HUAWEI_HOST)
   --interval <seconds>  Polling interval (default: 1)
   --window <seconds>    Initial chart time window (default: 60)
   --snapshot <seconds>  Collect for N seconds, print one frame and exit
   --user <name>         Router admin user (default: admin)
+                        (or set HUAWEI_USER)
   --password <pw>       Router admin password, needed for the device list
                         (or set HUAWEI_PASSWORD; defaults to the built-in password)
   -h, --help            Show this help
+
+HUAWEI_* variables can also live in a .env file in the current directory;
+real environment variables override it, and options override both.
 
 The Wi-Fi signal panel (this Mac's link to the router) needs a helper that
 \`npm run build\` compiles with swiftc on macOS; \`npm start\` builds it first.
@@ -40,11 +46,11 @@ const DEFAULT_PASSWORD = 'REDACTED';
 
 const { values: args } = parseArgs({
   options: {
-    host: { type: 'string', default: 'http://192.168.8.1' },
+    host: { type: 'string' },
     interval: { type: 'string', default: '1' },
     window: { type: 'string', default: '60' },
     snapshot: { type: 'string' },
-    user: { type: 'string', default: 'admin' },
+    user: { type: 'string' },
     password: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
@@ -55,11 +61,24 @@ if (args.help) {
   process.exit(0);
 }
 
-const host = /^https?:\/\//.test(args.host) ? args.host : `http://${args.host}`;
+// Precedence: CLI option > environment variable > .env file > default.
+function loadDotEnv(): Record<string, string | undefined> {
+  try {
+    return parseEnv(readFileSync('.env', 'utf8'));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw err;
+  }
+}
+const dotEnv = loadDotEnv();
+const setting = (name: string) => process.env[name] ?? dotEnv[name];
+
+const rawHost = args.host ?? setting('HUAWEI_HOST') ?? 'http://192.168.8.1';
+const host = /^https?:\/\//.test(rawHost) ? rawHost : `http://${rawHost}`;
 const intervalMs = Math.max(250, Number(args.interval) * 1000 || 1000);
 const client = new HuaweiClient(host, {
-  username: args.user,
-  password: args.password ?? process.env.HUAWEI_PASSWORD ?? DEFAULT_PASSWORD,
+  username: args.user ?? setting('HUAWEI_USER') ?? 'admin',
+  password: args.password ?? setting('HUAWEI_PASSWORD') ?? DEFAULT_PASSWORD,
 });
 
 // ---- state ----------------------------------------------------------------
