@@ -3,6 +3,8 @@
 Live terminal charts of mobile data download/upload speed for Huawei HiLink mobile WiFi
 routers (built for the E5576-320). No runtime dependencies — Node runs the TypeScript directly.
 
+![huawei-speed-tui showing download/upload speed, LTE and Wi-Fi signal charts and the connected devices](docs/screenshot.png)
+
 ```
 npm install        # only needed for `npm run typecheck`
 npm start          # connect to http://192.168.8.1
