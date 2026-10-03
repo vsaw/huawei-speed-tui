@@ -4,6 +4,7 @@
   "description": "Terminal charts of mobile data upload/download speeds for Huawei mobile WiFi routers (E5576 and friends)",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "engines": {
     "node": ">=22.18"
   },

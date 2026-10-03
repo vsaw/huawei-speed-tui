@@ -48,3 +48,7 @@ router through another interface than Wi-Fi.
 Data comes from `/api/monitoring/traffic-statistics` (rates in bytes/s, shown as bits/s), with
 carrier, network type, signal, battery and client count from `/api/monitoring/status` and
 `/api/net/current-plmn`. None of these need the admin password.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
