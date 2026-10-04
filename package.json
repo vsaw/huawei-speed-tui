@@ -1,6 +1,6 @@
 {
   "name": "huawei-speed-tui",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Terminal charts of mobile data upload/download speeds for Huawei mobile WiFi routers (E5576 and friends)",
   "type": "module",
   "private": true,

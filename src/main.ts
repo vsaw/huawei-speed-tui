@@ -12,6 +12,7 @@ import {
   rate,
   type Band,
 } from './ratings.ts';
+import { PingMonitor } from './ping.ts';
 import { WifiMonitor } from './wifi.ts';
 
 const HELP = `huawei-speed-tui — live upload/download charts for Huawei mobile WiFi
@@ -24,6 +25,8 @@ Options:
   --interval <seconds>  Polling interval (default: 1)
   --window <seconds>    Initial chart time window (default: 60)
   --snapshot <seconds>  Collect for N seconds, print one frame and exit
+  --ping <host>         Host to ping for latency and packet loss
+                        (default: google.com)
   --user <name>         Router admin user (default: admin)
                         (or set HUAWEI_USER)
   --password <pw>       Router admin password, needed for the device list
@@ -49,6 +52,7 @@ const { values: args } = parseArgs({
     interval: { type: 'string', default: '1' },
     window: { type: 'string', default: '60' },
     snapshot: { type: 'string' },
+    ping: { type: 'string', default: 'google.com' },
     user: { type: 'string' },
     password: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
@@ -99,7 +103,9 @@ let mobile: MobileSignal | undefined;
 let mobileAt = 0;
 let mobileError = '';
 const mobileSamples: { t: number; rsrp: number }[] = [];
-const wifi = new WifiMonitor(new URL(host).hostname, intervalMs, (Math.max(...WINDOWS, windowSec) + 60) * 1000);
+const keepMs = (Math.max(...WINDOWS, windowSec) + 60) * 1000;
+const wifi = new WifiMonitor(new URL(host).hostname, intervalMs, keepMs);
+const ping = new PingMonitor(args.ping, intervalMs, keepMs);
 
 // ---- ANSI helpers ---------------------------------------------------------
 
@@ -113,6 +119,7 @@ const c = {
   yellow: `${ESC}33m`,
   down: `${ESC}36m`, // cyan
   up: `${ESC}35m`, // magenta
+  ping: `${ESC}94m`, // bright blue
   inverse: `${ESC}7m`,
 };
 // Rating colours, indexed by rate().level: Poor … Excellent.
@@ -404,6 +411,69 @@ function renderWifiPanel(width: number, rows: number, end: number): string[] {
   );
 }
 
+// ---- ping (latency and packet loss to the internet) ---------------------------
+
+function latencyLabel(ms: number): string {
+  return ms >= 1000 ? `${ms / 1000}s` : `${ms}ms`;
+}
+
+/** Title, stats, a latency chart `rows - 1` high with a packet-loss strip below it, and a time axis. */
+function renderPingPanel(width: number, rows: number, end: number): string[] {
+  const windowMs = windowSec * 1000;
+  const recent = ping.samples.filter((s) => s.t >= end - windowMs && s.t <= end);
+  const error = ping.error ? paint(c.red, `⚠ ${ping.error}`) : '';
+  const title = paint(c.bold + c.ping, `Ping ${ping.target}`);
+  if (!recent.length) return [` ${title}`, ` ${error || paint(c.dim, 'waiting for replies…')}`];
+
+  const gapMs = ping.intervalMs * 3 + 1000;
+  const latest = recent.at(-1)!;
+  let current = '';
+  if (end - latest.t < gapMs) {
+    current = latest.rtt === null ? paint(c.bold + c.red, 'lost') : paint(c.bold, `${Math.round(latest.rtt)} ms`);
+  }
+  const lines = [` ${title}  ${current}   ${error}`];
+
+  const replies = recent.filter((s) => s.rtt !== null) as { t: number; rtt: number }[];
+  const lost = recent.length - replies.length;
+  const avg = replies.length ? replies.reduce((sum, s) => sum + s.rtt, 0) / replies.length : 0;
+  const peak = Math.max(0, ...replies.map((s) => s.rtt));
+  const loss = `${((lost / recent.length) * 100).toFixed(1)}% (${lost}/${recent.length})`;
+  lines.push(
+    (replies.length
+      ? ` ${paint(c.dim, 'avg')} ${Math.round(avg)} ms   ${paint(c.dim, 'peak')} ${Math.round(peak)} ms   `
+      : ' ') + `${paint(c.dim, 'loss')} ${lost ? paint(c.red, loss) : loss}`,
+  );
+
+  const cols = Math.max(1, width - AXIS_W);
+  const chartRows = Math.max(1, rows - 1);
+  const scaleMax = niceCeil(Math.max(50, peak));
+  const chart = renderArea(
+    resample(replies, (s) => s.rtt, cols * 2, end, windowMs, gapMs),
+    cols,
+    chartRows,
+    scaleMax,
+  );
+  for (let r = 0; r < chartRows; r++) {
+    let label = '';
+    if (r === 0) label = latencyLabel(scaleMax);
+    else if (r === Math.floor(chartRows / 2) && chartRows >= 5) label = latencyLabel(scaleMax / 2);
+    else if (r === chartRows - 1) label = '0';
+    const tick = label ? '┤' : '│';
+    lines.push(paint(c.dim, `${label.padStart(AXIS_W - 2)} ${tick}`) + paint(c.ping, chart[r]));
+  }
+
+  // Share of packets lost in each column: a dot for none, a red bar growing with the loss.
+  // No gap filling here, so a column without any ping result stays blank.
+  const lossBars = '▁▂▃▄▅▆▇█';
+  const strip = resample(recent, (s) => (s.rtt === null ? 1 : 0), cols, end, windowMs, 0)
+    .map((f) => (f === null ? ' ' : f === 0 ? paint(c.dim, '·') : paint(c.red, lossBars[Math.ceil(f * 8) - 1])))
+    .join('');
+  lines.push(paint(c.dim, `${'loss'.padStart(AXIS_W - 2)} ┤`) + strip);
+
+  lines.push(timeAxis(cols, AXIS_W));
+  return lines;
+}
+
 function signalBars(level: number, max: number, color = c.green): string {
   const bars = '▁▂▃▅▇';
   let out = '';
@@ -494,11 +564,15 @@ const PANEL_GAP = 3;
 function deviceTable(width: number, maxRows: number): string[] {
   const title = paint(c.bold, ' Wi-Fi devices');
   if (!client.canLogin) {
-    return [`${title}  ${paint(c.dim, 'set HUAWEI_PASSWORD (router admin password) to list connected devices')}`];
+    return [
+      title,
+      ` ${paint(c.dim, 'set HUAWEI_PASSWORD (router admin password)')}`,
+      ` ${paint(c.dim, 'to list connected devices')}`,
+    ];
   }
-  if (hostsError) return [`${title}  ${paint(c.red, `⚠ ${hostsError}`)}`];
-  if (!hosts) return [`${title}  ${paint(c.dim, 'loading…')}`];
-  if (hosts.length === 0) return [`${title}  ${paint(c.dim, 'no devices connected')}`];
+  if (hostsError) return [title, ` ${paint(c.red, `⚠ ${hostsError}`)}`];
+  if (!hosts) return [title, ` ${paint(c.dim, 'loading…')}`];
+  if (hosts.length === 0) return [title, ` ${paint(c.dim, 'no devices connected')}`];
 
   // Column widths include the 2-space gap before each column. When space is tight,
   // drop Source first, then MAC address.
@@ -536,14 +610,16 @@ function deviceTable(width: number, maxRows: number): string[] {
 
 function frame(width: number, height: number): string[] {
   // Layout, top to bottom: 3 header lines, blank, download | upload, blank,
-  // LTE signal | Wi-Fi signal, blank, device table, blank, footer. Each chart panel has
-  // a title, a stats line and a time axis around its chart rows.
-  const FIXED = 3 + 1 + 3 + 1 + 3 + 1 + 1 + 1;
-  const wantTable = hosts && hosts.length ? hosts.length + 1 : 1;
-  const tableRows = Math.max(1, Math.min(wantTable, height - FIXED - 5)); // keep ≥ 5 chart rows
-  const free = Math.max(0, height - FIXED - tableRows);
-  const signalRows = Math.max(2, Math.floor(free * 0.4));
-  const chartRows = Math.max(3, free - signalRows);
+  // LTE signal | Wi-Fi signal, blank, device table | ping, blank, footer. Each chart panel
+  // has a title, a stats line and a time axis around its chart rows.
+  const FIXED = 3 + 1 + 3 + 1 + 3 + 1 + 3 + 1 + 1;
+  const free = Math.max(0, height - FIXED);
+  // A long device list makes the bottom row taller (the ping chart grows with it), as
+  // long as the charts above keep 10 rows between them.
+  const wantTable = hosts && hosts.length ? hosts.length + 1 : 2;
+  const pingRows = Math.max(2, Math.floor(free * 0.25), Math.min(wantTable - 3, free - 10));
+  const signalRows = Math.max(2, Math.floor((free - pingRows) * 0.4));
+  const chartRows = Math.max(3, free - pingRows - signalRows);
   // Both columns get exactly the same width; any odd column is left empty on the right.
   const panelW = Math.max(1, Math.floor((width - PANEL_GAP) / 2));
   // Start the gap and the right column at absolute screen columns (CSI n G) instead of
@@ -572,9 +648,14 @@ function frame(width: number, height: number): string[] {
     (_, i) => fit(lte[i] ?? '', panelW) + gap + fit(wlan[i] ?? '', panelW),
   );
 
-  const table = deviceTable(width, tableRows);
+  const table = deviceTable(panelW, pingRows + 3);
+  const pings = renderPingPanel(panelW, pingRows, end);
+  const bottom = Array.from(
+    { length: pingRows + 3 },
+    (_, i) => fit(table[i] ?? '', panelW) + gap + fit(pings[i] ?? '', panelW),
+  );
 
-  return [header(), mobileHeader(), wifiHeader(), '', ...panels, '', ...signals, '', ...table, '', footer()];
+  return [header(), mobileHeader(), wifiHeader(), '', ...panels, '', ...signals, '', ...bottom, '', footer()];
 }
 
 function draw() {
@@ -585,7 +666,9 @@ function draw() {
   const lines = frame(width, height)
     .slice(0, height)
     .map((l) => fit(l, width));
-  process.stdout.write(`${ESC}H` + lines.map((l) => l + `${ESC}K`).join('\r\n') + `${ESC}J`);
+  // Clear each line before writing it, not after: once a line reaches the last column the
+  // cursor stays on it, and erasing to the end of the line would wipe that last character.
+  process.stdout.write(`${ESC}H` + lines.map((l) => `${ESC}2K` + l).join('\r\n') + `${ESC}J`);
 }
 
 // ---- polling --------------------------------------------------------------
@@ -653,6 +736,7 @@ async function poll() {
 // ---- main -----------------------------------------------------------------
 
 async function snapshot(seconds: number) {
+  ping.start();
   await wifi.start();
   const until = Date.now() + seconds * 1000;
   do {
@@ -665,6 +749,7 @@ async function snapshot(seconds: number) {
   );
   console.log(lines.join('\n'));
   wifi.stop();
+  ping.stop();
   await client.logout().catch(() => {});
 }
 
@@ -678,6 +763,7 @@ function interactive() {
   process.stdout.write(`${ESC}?1049h${ESC}?25l${ESC}?7l${ESC}2J`);
   const cleanup = () => {
     wifi.stop();
+    ping.stop();
     process.stdout.write(`${ESC}?7h${ESC}?25h${ESC}?1049l`);
   };
   let quitting = false;
@@ -729,6 +815,7 @@ function interactive() {
     setTimeout(loop, intervalMs);
   };
   draw();
+  ping.start();
   void wifi.start().then(draw);
   void loop();
 }

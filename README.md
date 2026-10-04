@@ -3,12 +3,13 @@
 Live terminal charts of mobile data download/upload speed for Huawei HiLink mobile WiFi
 routers (built for the E5576-320). No runtime dependencies — Node runs the TypeScript directly.
 
-![huawei-speed-tui showing download/upload speed, LTE and Wi-Fi signal charts and the connected devices](docs/screenshot.png)
+![huawei-speed-tui showing download/upload speed, LTE and Wi-Fi signal charts, the connected devices and a ping chart](docs/screenshot.png)
 
 ```
 npm install        # only needed for `npm run typecheck`
 npm start          # connect to http://192.168.8.1
 npm start -- --host 192.168.1.1 --interval 2 --window 900
+npm start -- --ping 1.1.1.1  # ping another host (default: google.com)
 npm start -- --snapshot 10   # collect 10 s, print one frame, exit
 ```
 
@@ -27,10 +28,16 @@ Command-line options win over environment variables, which win over `.env`.
 
 Keys: `q` quit · `p` pause · `w` cycle window (1m / 5m / 15m / 60m) · `s` toggle shared y-scale
 
-At the bottom, a table lists the connected Wi-Fi devices: name, MAC address, IPv4 address,
+At the bottom left, a table lists the connected Wi-Fi devices: name, MAC address, IPv4 address,
 address source (DHCP/static) and how long each has been connected. The device list needs the router admin
 password: pass `--password` or set `HUAWEI_PASSWORD` (in the environment or `.env`); without it
 the device list and LTE signal details are skipped. A rejected password is never retried, so the router won't lock the account.
+
+Next to the device table, a ping chart shows the round-trip time to `google.com` (or the host
+given with `--ping`), with avg, peak and packet loss over the time window. A strip under the chart
+marks lost packets in red: the taller the bar, the more packets were lost at that time. It runs the
+system `ping` once a second (or at `--interval`, if longer), and keeps retrying if the name
+doesn't resolve.
 
 Below the speed charts, an LTE signal chart shows the router's link to the cell tower (RSRP,
 rated Excellent (≥ −80 dBm) · Good (≥ −90) · Fair (≥ −100) · Weak (≥ −110) · Poor), and a header
